@@ -1,0 +1,198 @@
+---
+title: "Lecture 4 and Assignment"
+author: "Arielle Coq AC4140"
+date: "2/11/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+###Part 1:Implenting a Simple Prediction Pipeline
+
+First loading in the tidyverse and viridis library into my markdown page 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library (tidyverse)
+library (viridis)
+library(Amelia)
+library(caret)
+library(devtools)
+library(stats)
+library(factoextra)
+library(cluster)
+library(modelr)
+library(mgcv)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+First will enter the data set into R and will do some basic data cleaning. 
+
+```{r}
+phy_activity<-read.csv("class4_p1.csv", header=TRUE)
+
+phy_activity = 
+  phy_activity %>% 
+  janitor::clean_names() %>% 
+  rename (PACID = "x") 
+```
+
+Cleaning some of the data and making the features categorical instead of numerical based on the codebook provided. 
+
+```{r}
+phy_activity =
+  phy_activity %>% 
+  mutate(chronic1 = recode(chronic1,"2" = "0", "1"= "1"),
+    chronic1 = factor(chronic1, levels= c("0", "1")),
+    chronic3 = recode(chronic3, "2" = "0", "1"= "1"),
+    chronic3 = factor(chronic3, levels= c("0", "1")),
+    chronic4 = recode(chronic4, "2" = "0", "1"= "1"),
+    chronic4 = factor(chronic4, levels= c("0", "1")),
+    tobacco1 = factor(tobacco1, levels= c("1", "2","3")),
+    alcohol1 = factor(alcohol1, levels= c("1", "2","3")),
+    habits5 = factor(habits5, levels= c("1", "2","3","4")),
+    habits7 = factor(habits7, levels= c("1", "2","3","4","5")),
+    agegroup = factor(agegroup, levels= c("1", "2","3","4")),
+    dem3 = recode(dem3,"2" = "0", "1"= "1"),
+    dem3 = factor(dem3, levels= c("0", "1")),
+    dem4 = recode(dem4,"2" = "0", "1"= "1"),
+    dem4 = factor(dem4, levels= c("0", "1")),
+    dem8 = recode(dem8,"2" = "0", "1"= "1"),
+    dem8 = factor(dem8, levels= c("0", "1")),
+    povertygroup = recode(povertygroup,"1" = "1", "2"= "2","3"= "3", "4"= "4","5"= "5"),
+    povertygroup = factor(povertygroup, levels= c("1", "2","3","4","5"))) %>% 
+  drop_na() 
+```
+
+Created a training and testing set where the training data set has 70% of the data and the testing set has 30% of the data set. 
+
+```{r}
+set.seed(100)
+train.indices<-createDataPartition(y=phy_activity$healthydays,p=0.7,list=FALSE)
+
+training<-phy_activity[train.indices,]
+testing<-phy_activity[-train.indices,]
+```
+
+### Question 1- Fit two prediction  models using  different subsets of the features in the training data. Features can overlap in the two models, but the feature sets should not be exactly the same across models.
+
+```{r}
+model.1 <- lm(healthydays ~ chronic1  + chronic3 + chronic4 + bmi  + agegroup, data=training)
+summary(model.1)
+
+model.2 <- lm(healthydays ~ chronic1 + chronic3 + chronic4 + alcohol1 + dem3 + dem4 + dem8 + tobacco1 + gpaq8totmin + gpaq11days + habits7 + habits5,
+             data=training)
+summary(model.2)
+```
+
+### Question 2- Apply both models within the test data and determine which model is the preferred prediction model using the appropriate evaluation metric(s)
+
+```{r}
+rmse(model.1, testing)
+rmse(model.2, testing)
+```
+
+
+###Question 3- Describe one setting (in 1-2 sentences) where the implementation of your final model would be useful.
+
+The implementation of my final model would be most useful in model 1 when looking at the different chronic diseases with agegroup and bmi in the model. This model could help predict chronic disease diagnosis when looking at bmi and across different age groups. 
+
+##Part 2:Conducting an Unsupervised Analysis 
+
+###Question 4
+
+Loaded the US Arrests Data set into R. 
+
+```{r}
+data(USArrests)
+```
+
+Then I checked to see if any scaling had to be done to any of the variables. 
+
+```{r}
+USArrests.data.nomiss<-na.omit(USArrests)
+
+#Check means and SDs to determine if scaling is necessary
+colMeans(USArrests.data.nomiss, na.rm=TRUE)
+apply(USArrests.data.nomiss, 2, sd, na.rm=TRUE)
+
+USArrests.scale<-scale(USArrests.data.nomiss, center=TRUE, scale=TRUE)
+apply(USArrests.scale, 2, sd, na.rm=TRUE)
+
+#Can compare sds used to scale with the sds above to ensure they are close.
+USArrests.data.nomiss$scale
+
+#view results of pca. Note the first three components are needed to explain at least 75% of the variance
+summary(USArrests.scale)
+#bc.pca$rotation
+```
+
+
+Scaling is necessary for this data set because when looking at the means and sd, they are very different, therefore I scaled the data to make them all on the same scale. 
+
+Set the distance using the Euclidian method, since our features are continuous and numercial. Also sets a dismmilarty matrix to get the distance and looked at the different hierarchical clustering methods: Single, Complete and Avearge. I also performed a gap statistic to tell me the optimal number of clusstr to should have. 
+
+```{r}
+set.seed(100)
+
+gap_stat <- clusGap(USArrests.scale, FUN = hcut, nstart = 25, K.max = 10, B = 50, mc_metric = "euclidean")
+fviz_gap_stat(gap_stat)
+
+
+# Create Dissimilarity matrix
+diss.matrix <- dist(USArrests.scale, method = "euclidean")
+
+# Hierarchical clustering using Single Linkage
+hc1 <- hclust(diss.matrix, method = "single" )
+
+groups.1<-cutree(hc1,4)
+aggregate(USArrests.scale,list(groups.1),mean)
+
+# Plot the obtained dendrogram using Single
+plot(hc1, cex = 0.6, hang = -1)
+
+# Hierarchical clustering using Complete Linkage
+hc2 <- hclust(diss.matrix, method = "complete" )
+
+groups.2 <-cutree(hc2,4)
+aggregate(USArrests.scale,list(groups.2),mean)
+
+# Plot the obtained dendrogram using Complete
+plot(hc2, cex = 0.6, hang = -1)
+
+# Hierarchical clustering using Average Linkage
+hc3 <- hclust(diss.matrix, method = "average" )
+
+groups.3<-cutree(hc3,4)
+aggregate(USArrests.scale,list(groups.3),mean)
+
+# Plot the obtained dendrogram using Average
+plot(hc3, cex = 0.6, hang = -1)
+```
+
+The optimal number of clusters to use using a clear, data driven strategy is three cluster for each of the different types of compositions. 
+
+The composition for using the single linkage method shows that the third group has the highest mean for Murder, UrbanPop, group 1 has the lowest for these categories 7.648 and 66.0425 respectively. The highest mean for Assault is in group 4 and the highest mean for Rape is in group 2. 
+
+The composition for using the complete and avearage linkage methods show the same values as one other. The dendrograms are quite similar however the average dendrogram has more clusters than the complete dendrogram. They both show the highest mean for Assualt and Rape in group 1, highest mean for murder is in group 4 and the highest mean for UrbanPop is in group 2.
+
+The dendrograms are different from each other when using the different methods, however as mentioned earlier both the complete and average methods produced the same results when looking for clusters across the 4 features. The single method produce different results from the previos two models. The complete and average models appear to be clearer and more distinct compared to the the single method model. 
+
+###Question 5
+
+One question that can be addressed in 2020, would be to see if the change in UrbanPop can predict if there is more crime: Murder, Assualt, and Rape across the different states. 
+
